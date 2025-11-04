@@ -50,34 +50,42 @@ last_pos = None
 async def handle_input(websocket):
     global last_pos, stroke_active
     print("Input client connected")
-    async for message in websocket:
-        try:
-            cmd, coords = message.split(":")
-            x, y = map(int, coords.split(","))
+    
+    try:
+        async for message in websocket:
+            try:
+                cmd, coords = message.split(":")
+                x, y = map(int, coords.split(","))
 
-            if cmd == "down":
-                last_pos = (x, y)
-                stroke_active = True
-                mouse_down(x, y)
+                if cmd == "down":
+                    last_pos = (x, y)
+                    stroke_active = True
+                    mouse_down(x, y)
 
-            elif cmd == "move":
-                if stroke_active and last_pos is not None:
-                    mouse_move(x, y)
-                last_pos = (x, y)
+                elif cmd == "move":
+                    if stroke_active and last_pos is not None:
+                        mouse_move(x, y)
+                    last_pos = (x, y)
 
-            elif cmd == "up":
-                if stroke_active:
-                    mouse_up()
+                elif cmd == "up":
+                    if stroke_active:
+                        mouse_up()
+                        stroke_active = False
+                    last_pos = None  # reset for next stroke
+
+                elif cmd == "click":
+                    click(x, y)
                     stroke_active = False
-                last_pos = None  # reset for next stroke
+                    last_pos = None
 
-            elif cmd == "click":
-                click(x, y)
-                stroke_active = False
-                last_pos = None
-
-        except Exception as e:
-            print("Input error:", e)
+            except Exception as e:
+                print("Input error:", e)
+    except websockets.exceptions.ConnectionClosedOK:
+        print("Client disconnected normally.")
+    except websockets.exceptions.ConnectionClosedError as e:
+        print(f"Client disconnected with error: {e}")
+    except Exception as e:
+        print(f"Unexpected websocket error: {e}")
 
 # ---------------- SCREEN STREAM ----------------
 async def stream_screen(websocket):
@@ -113,14 +121,18 @@ async def stream_screen(websocket):
 async def main():
     print("Run this server and then open the browser on tablet with the correct IP.")
     # Using ADB
-    async with websockets.serve(stream_screen, "localhost", 9001), \
-               websockets.serve(handle_input, "localhost", 9002):
+    async with websockets.serve(stream_screen, "localhost", 9001, ping_interval=10,       # send ping every 10s
+    ping_timeout=5,  ), \
+               websockets.serve(handle_input, "localhost", 9002, ping_interval=10,       # send ping every 10s
+    ping_timeout=5,  ):
         await asyncio.Future()  # run forever
         
     # __________
     # Using Wireless Lan
-    # async with websockets.serve(stream_screen, "0.0.0.0", 9001), \
-    #            websockets.serve(handle_input, "0.0.0.0", 9002):
+    # async with websockets.serve(stream_screen, "0.0.0.0", 9001, ping_interval=10,       # send ping every 10s
+    # ping_timeout=5,  ), \
+    #            websockets.serve(handle_input, "0.0.0.0", 9002, ping_interval=10,       # send ping every 10s
+    # ping_timeout=5,  ):
     #     await asyncio.Future()  # run forever
 
 if __name__ == "__main__":
