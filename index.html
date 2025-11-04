@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tablet Remote OpenBoard</title>
+<style>
+  html, body { margin:0; padding:0; overflow:hidden; background:black; }
+  canvas { display:block; touch-action:none; }
+</style>
+</head>
+<body>
+
+<canvas id="screen"></canvas>
+
+<script>
+const SCREEN_WS = "ws://10.166.5.217:9001"; // mac IP
+const INPUT_WS = "ws://10.166.5.217:9002";
+
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+
+let macWidth = 1, macHeight = 1;
+let drawing = false;
+
+// ------------------- Screen Stream -------------------
+const screenSocket = new WebSocket(SCREEN_WS);
+screenSocket.binaryType = "arraybuffer";
+
+screenSocket.onmessage = async (event) => {
+    if (typeof event.data === "string") {
+        const data = JSON.parse(event.data);
+        if (data.type === "config") {
+            macWidth = data.width;
+            macHeight = data.height;
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+    } else {
+        const blob = new Blob([event.data], {type: "image/jpeg"});
+        const bitmap = await createImageBitmap(blob);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    }
+};
+
+// ------------------- Input -------------------
+const inputSocket = new WebSocket(INPUT_WS);
+
+function sendEvent(type, x, y) {
+    if (macWidth === 0 || macHeight === 0) return;
+    const scaledX = Math.round(x * macWidth / canvas.width);
+    const scaledY = Math.round(y * macHeight / canvas.height);
+    inputSocket.send(`${type}:${scaledX},${scaledY}`);
+}
+
+// ------------------- Touch & Mouse -------------------
+canvas.addEventListener("touchstart", e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    drawing = true;
+    sendEvent("down", t.clientX, t.clientY);
+});
+
+canvas.addEventListener("touchmove", e => {
+    e.preventDefault();
+    if (!drawing) return;
+    const t = e.touches[0];
+    sendEvent("move", t.clientX, t.clientY);
+});
+
+canvas.addEventListener("touchend", e => {
+    e.preventDefault();
+    if (!drawing) return;
+    drawing = false;
+    inputSocket.send("up:0,0");
+});
+
+canvas.addEventListener("mousedown", e => {
+    drawing = true;
+    sendEvent("down", e.offsetX, e.offsetY);
+});
+
+canvas.addEventListener("mousemove", e => {
+    if (!drawing) return;
+    sendEvent("move", e.offsetX, e.offsetY);
+});
+
+canvas.addEventListener("mouseup", e => {
+    if (!drawing) return;
+    drawing = false;
+    inputSocket.send("up:0,0"); // same
+});
+
+canvas.addEventListener("click", e => sendEvent("click", e.offsetX, e.offsetY));
+
+window.addEventListener("resize", () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
+</script>
+
+</body>
+</html>
